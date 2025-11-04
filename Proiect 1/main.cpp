@@ -7,7 +7,7 @@
 #include <GL/freeglut.h> // nu trebuie uitat freeglut.h
 #include "loadShaders.h"
 
-
+// test
 //////////////////////////////////////
 
 GLuint
@@ -16,6 +16,7 @@ VboId,
 ColorBufferId,
 ProgramId;
 
+//////////
 
 void CreateVBO(void)
 {
