@@ -1,10 +1,11 @@
-// Shader-ul de fragment / Fragment shader 
 #version 330 core
 
-in vec4 ex_Color;
-out vec4 out_Color;
+in vec4 fragColor;       // vine din vertex shader
+out vec4 outColor;
+
+uniform float colorFactor; // pentru intunecare
 
 void main(void)
-  {
-    out_Color = ex_Color;
-  }
+{
+    outColor = vec4(fragColor.rgb * colorFactor, fragColor.a);
+}
