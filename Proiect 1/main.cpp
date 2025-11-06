@@ -1,4 +1,4 @@
-﻿#include <windows.h>
+﻿#include <iostream>
 #include <GL/glew.h>
 #include <GL/freeglut.h>
 #include "loadShaders.h"
@@ -7,6 +7,7 @@
 #include "glm/gtc/type_ptr.hpp"
 #include <vector>
 #include <cmath>
+#include <windows.h>
 #include <cstdlib>
 #include <ctime>
 #include <algorithm>
@@ -14,18 +15,38 @@
 using namespace std;
 
 GLuint vaoBg, vboBg, colorBg;
-GLuint vaoBird, vboBird, colorBird; 
+GLuint vaoBird, vboBird, colorBird;
 GLuint ProgramId;
 GLint myMatrixLocation, colorFactorLocation;
 glm::mat4 myMatrix, resizeMatrix;
 float xMin = -100.f, xMax = 100.f, yMin = -100.f, yMax = 100.f;
 int windowWidth = 1200, windowHeight = 800;
 
+// Limitele dinamice ale Vao ului Curent (folosite pentru maparea mouse ului)
+float vao_xMin_current = xMin;
+float vao_xMax_current = xMax;
+float vao_yMin_current = yMin;
+float vao_yMax_current = yMax;
 
+struct BirdData {
+    float currentX;
+    float currentY;
+
+    float lerpFactor;
+    glm::vec2 permanentOffset;
+
+    float scale;
+    float wingTimeOffset;
+    float wingAmplitude;
+    float wingSpeedFactor;
+};
+
+std::vector<BirdData> flock;
 float birdOffset = 0.0f; // pozitia pasarii pe axa x
 float birdSpeed = 0.5f; // viteza de deplasare a pasarii
 float wingTime = 0.0f; // timpul pentru animatia aripilor
-
+bool isMouseTracking = false;
+const float autoFlySpeed = 0.05f;
 
 struct SpawnedBird 
 {
@@ -55,7 +76,7 @@ void CreateBirdVAO() {
         // aripa stanga
         0.0f, 0.0f, 0.0f, 1.0f,
         -3.0f, 2.0f, 0.0f, 1.0f,
-		// aripa dreapta
+        // aripa dreapta
         0.0f, 0.0f, 0.0f, 1.0f,
         3.0f, 2.0f, 0.0f, 1.0f
     };
@@ -85,44 +106,12 @@ void CreateBirdVAO() {
     glVertexAttribPointer(1, 4, GL_FLOAT, GL_FALSE, 0, 0);
 }
 
-// pasare in forma de V
-void DrawBird(glm::vec2 position, float scale = 1.0f, float wingAngle = 0.0f) 
-{
-    glBindVertexArray(vaoBird);
-
-    myMatrix = glm::translate(resizeMatrix, glm::vec3(position, 0.0f));
-    myMatrix = glm::scale(myMatrix, glm::vec3(scale, scale, 1.0f));
-    
-    // rotatie pe aripa pentru animatie
-    glm::mat4 wingMatrix = myMatrix;
-    
-    glUniformMatrix4fv(myMatrixLocation, 1, GL_FALSE, &myMatrix[0][0]);
-    glUniform1f(colorFactorLocation, 1.0f);
-
-    glLineWidth(3.5f);
-    
-    // se modifica doar coordonata y a varfurilor aripilor pentru simularea bataii pentru zbor
-    GLfloat birdVertices[] = {
-        // aripa stanga
-        0.0f, 0.0f, 0.0f, 1.0f,
-        -3.0f, 2.0f + wingAngle, 0.0f, 1.0f,
-        // aripa dreapta
-        0.0f, 0.0f, 0.0f, 1.0f,
-        3.0f, 2.0f + wingAngle, 0.0f, 1.0f
-    };
-    
-    // actualizam VBO cu noile coordonate pentru a vizualiza animatia
-    glBindBuffer(GL_ARRAY_BUFFER, vboBird);
-    glBufferSubData(GL_ARRAY_BUFFER, 0, sizeof(birdVertices), birdVertices);
-
-    glDrawArrays(GL_LINES, 0, 4);
-}
 
 void CreateVAO() {
     vector<GLfloat> vertices;
     vector<GLfloat> colors;
 
-	// ====== Solul ======
+    // ====== Solul ======
     GLfloat groundVertices[] = {
     -windowWidth, -75.0f, 0.0f, 1.0f,
      windowWidth, -75.0f, 0.0f, 1.0f,
@@ -160,7 +149,7 @@ void CreateVAO() {
 
     // ====== Cercurile (pentru copaci si nori) ======
 
-	//                   coordonate centru cerc,   raza,    culoare
+    //                   coordonate centru cerc,   raza,    culoare
     auto addCircle = [&](float cx, float cy, float radius, glm::vec4 color) {
         // centru
         vertices.insert(vertices.end(), { cx, cy, 0.0f, 1.0f });
@@ -185,10 +174,10 @@ void CreateVAO() {
     addCircle(20.0f, 30.0f, 22.0f, glm::vec4(87.0f / 255.0f, 140.0f / 255.0f, 24.0f / 255.0f, 1.0f));  // cerc jos dreapta
 
     // coordonatele norilor
-	addCircle(0.0f, 5.0f, 10.0f, glm::vec4(1.0f, 1.0f, 1.0f, 1.0f));
+    addCircle(0.0f, 5.0f, 10.0f, glm::vec4(1.0f, 1.0f, 1.0f, 1.0f));
     addCircle(-10.0f, 0.0f, 10.0f, glm::vec4(1.0f, 1.0f, 1.0f, 1.0f));
     addCircle(0.0f, 0.0f, 10.0f, glm::vec4(1.0f, 1.0f, 1.0f, 1.0f));
-    addCircle(10.0f, 0.0f, 10.0f, glm::vec4(1.0f, 1.0f, 1.0f, 1.0f)); 
+    addCircle(10.0f, 0.0f, 10.0f, glm::vec4(1.0f, 1.0f, 1.0f, 1.0f));
 
 
     // ====== Trimitem toate datele intr-un singur VAO ======
@@ -221,10 +210,37 @@ void Initialize() {
     glClearColor(0.7f, 0.9f, 1.0f, 1.0f); // cer albastru deschis
     CreateVAO(); // fundal
     CreateShaders();
-	CreateBirdVAO(); // pasari
+    CreateBirdVAO(); // pasari
 
     resizeMatrix = glm::ortho(xMin, xMax, yMin, yMax);
     myMatrix = resizeMatrix;
+}
+
+void InitializeFlock() {
+    float startX = 0.0f;
+    float startY = 0.0f;
+
+    // Structura: currentX, currentY, lerpFactor, permanentOffset, scale, wingTimeOffset, wingAmplitude, wingSpeedFactor
+
+    // 1.1. Pasarea 1 (Liderul vizual, offset 0)
+    flock.push_back({ startX, startY, 0.3f, glm::vec2(0.0f, 0.0f), 2.5f, 0.0f, 0.5f, 1.0f });
+
+    // 1.2. Pasari in fata si lateral (offset mare pentru separare)
+    flock.push_back({ startX - 15.0f, startY + 12.0f, 0.25f, glm::vec2(-15.0f, 12.0f), 2.3f, 0.2f, 0.5f, 1.0f });
+    flock.push_back({ startX + 18.0f, startY - 8.0f, 0.27f, glm::vec2(18.0f, -8.0f), 2.3f, 0.1f, 0.5f, 1.0f });
+    flock.push_back({ startX - 10.0f, startY - 14.0f, 0.2f, glm::vec2(-10.0f, -14.0f), 2.2f, 0.4f, 0.5f, 1.0f });
+    flock.push_back({ startX + 22.0f, startY + 5.0f, 0.22f, glm::vec2(22.0f, 5.0f), 2.2f, 0.3f, 0.5f, 1.0f });
+
+    // 1.3. Pasari in coada (raspuns mai lent)
+    flock.push_back({ startX - 5.0f, startY - 20.0f, 0.15f, glm::vec2(-5.0f, -20.0f), 2.1f, 0.6f, 0.5f, 1.0f });
+    flock.push_back({ startX + 14.0f, startY - 18.0f, 0.17f, glm::vec2(14.0f, -18.0f), 2.1f, 0.5f, 0.5f, 1.0f });
+    flock.push_back({ startX - 25.0f, startY - 10.0f, 0.18f, glm::vec2(-25.0f, -10.0f), 2.1f, 0.7f, 0.5f, 1.0f });
+    flock.push_back({ startX - 28.0f, startY + 18.0f, 0.19f, glm::vec2(-28.0f, 18.0f), 2.1f, 0.8f, 0.5f, 1.0f });
+
+    // pasari mici si lente
+    flock.push_back({ startX - 35.0f, startY + 25.0f, 0.09f, glm::vec2(-35.0f, 25.0f), 1.8f, 0.0f, 0.4f, 0.9f });
+    flock.push_back({ startX + 10.0f, startY - 30.0f, 0.05f, glm::vec2(10.0f, -30.0f), 2.0f, 0.9f, 0.6f, 1.05f });
+    flock.push_back({ startX - 20.0f, startY - 28.0f, 0.06f, glm::vec2(-20.0f, -28.0f), 1.9f, 1.0f, 0.55f, 1.1f });
 }
 
 void DrawTree(glm::vec2 position, float scale = 1.0f, float colorFactor = 1.0f) {
@@ -252,9 +268,41 @@ void DrawCloud(glm::vec2 position, float scale = 1.0f) {
     glUniformMatrix4fv(myMatrixLocation, 1, GL_FALSE, &myMatrix[0][0]);
 
     // desenam norii
-    for( int i = cloudStartIndex; i < cloudEndIndex; i = i + numSegments + 2)
+    for (int i = cloudStartIndex; i < cloudEndIndex; i = i + numSegments + 2)
         glDrawArrays(GL_TRIANGLE_FAN, i, 42);
 
+}
+
+// pasare in forma de V
+void DrawBird(glm::vec2 position, float scale = 1.0f, float wingAngle = 0.0f) {
+    glBindVertexArray(vaoBird);
+
+    myMatrix = glm::translate(resizeMatrix, glm::vec3(position, 0.0f));
+    myMatrix = glm::scale(myMatrix, glm::vec3(scale, scale, 1.0f));
+
+    // rotatie pe aripa pentru animatie
+    glm::mat4 wingMatrix = myMatrix;
+
+    glUniformMatrix4fv(myMatrixLocation, 1, GL_FALSE, &myMatrix[0][0]);
+    glUniform1f(colorFactorLocation, 1.0f);
+
+    glLineWidth(3.5f);
+
+    // se modifica doar coordonata y a varfurilor aripilor pentru simularea bataii pentru zbor
+    GLfloat birdVertices[] = {
+        // aripa stanga
+        0.0f, 0.0f, 0.0f, 1.0f,
+        -3.0f, 2.0f + wingAngle, 0.0f, 1.0f,
+        // aripa dreapta
+        0.0f, 0.0f, 0.0f, 1.0f,
+        3.0f, 2.0f + wingAngle, 0.0f, 1.0f
+    };
+
+    // actualizam VBO cu noile coordonate pentru a vizualiza animatia
+    glBindBuffer(GL_ARRAY_BUFFER, vboBird);
+    glBufferSubData(GL_ARRAY_BUFFER, 0, sizeof(birdVertices), birdVertices);
+
+    glDrawArrays(GL_LINES, 0, 4);
 }
 
 void RenderFunction() {
@@ -265,46 +313,30 @@ void RenderFunction() {
     glUniform1f(colorFactorLocation, 1.0f);
     glUniformMatrix4fv(myMatrixLocation, 1, GL_FALSE, &resizeMatrix[0][0]);
     glDrawArrays(GL_QUADS, 0, 4);
-
     // === COPACII ===
     // randul
-    DrawTree(glm::vec2(-150, -65), 0.3f, 0.8f);
     DrawTree(glm::vec2(-130, -65), 0.3f, 0.8f);
     DrawTree(glm::vec2(-90, -65), 0.3f, 0.8f);
     DrawTree(glm::vec2(-50, -65), 0.3f, 0.8f);
     DrawTree(glm::vec2(-10, -65), 0.3f, 0.8f);
     DrawTree(glm::vec2(30, -65), 0.3f, 0.8f);
     DrawTree(glm::vec2(70, -65), 0.3f, 0.8f);
-    DrawTree(glm::vec2(110, -65), 0.3f, 0.8f);    
+    DrawTree(glm::vec2(110, -65), 0.3f, 0.8f);
     DrawTree(glm::vec2(130, -65), 0.3f, 0.8f);
 
-
-    // randul de mijloc    
+    // randul de mijloc   
+	for (int i = -160; i <= 160; i += 40)
+        DrawTree(glm::vec2(i, -65), 0.4f, 0.9f);
     DrawTree(glm::vec2(-180, -65), 0.4f, 0.9f);
-    DrawTree(glm::vec2(-160, -65), 0.4f, 0.9f);
-    DrawTree(glm::vec2(-120, -65), 0.4f, 0.9f);
-    DrawTree(glm::vec2(-80, -65), 0.4f, 0.9f);
-    DrawTree(glm::vec2(-40, -65), 0.4f, 0.9f);
     DrawTree(glm::vec2(20, -65), 0.4f, 0.9f);
-    DrawTree(glm::vec2(40, -65), 0.4f, 0.9f);
-    DrawTree(glm::vec2(80, -65), 0.4f, 0.9f);
-    DrawTree(glm::vec2(120, -65), 0.4f, 0.9f);
-    DrawTree(glm::vec2(160, -65), 0.4f, 0.9f);
     DrawTree(glm::vec2(180, -65), 0.4f, 0.9f);
 
     // randul cel mai apropiat
-    DrawTree(glm::vec2(-170, -65), 0.5f, 1.0f);
-    DrawTree(glm::vec2(-150, -65), 0.5f, 1.0f);
-    DrawTree(glm::vec2(-100, -65), 0.5f, 1.0f);
-    DrawTree(glm::vec2(-50, -65), 0.5f, 1.0f);
-    DrawTree(glm::vec2(0, -65), 0.5f, 1.0f);
-    DrawTree(glm::vec2(50, -65), 0.5f, 1.0f);
-    DrawTree(glm::vec2(100, -65), 0.5f, 1.0f);
-    DrawTree(glm::vec2(150, -65), 0.5f, 1.0f);
-    DrawTree(glm::vec2(170, -65), 0.5f, 1.0f);
+	for (int i = -200; i <= 200; i += 50)
+        DrawTree(glm::vec2(i, -65), 0.5f, 1.0f);
 
     // === NORII ===
-    glUniform1f(colorFactorLocation, 1.0f); 
+    glUniform1f(colorFactorLocation, 1.0f);
 
     DrawCloud(glm::vec2(-150, 80), 0.8f);
     DrawCloud(glm::vec2(-120, 70), 0.8f);
@@ -315,28 +347,18 @@ void RenderFunction() {
     DrawCloud(glm::vec2(130, 85), 0.7f);
     DrawCloud(glm::vec2(160, 75), 0.7f);
 
+    
     // stolul de pasari
-    // primul stol in plan apropiat, organizate in forma de V
-	DrawBird(glm::vec2(-60 + birdOffset, 10), 2.5f, sin(wingTime) * 0.5f);                                  // sin(wingTime) e in intervalul [-1, 1] si impart la 2 valoarea generata
-	DrawBird(glm::vec2(-70 + birdOffset, 5), 2.3f, sin(wingTime + 0.2f) * 0.5f);                            // pentru a reduce amplitudinea bataii aripilor
-	DrawBird(glm::vec2(-80 + birdOffset, 0), 2.3f, sin(wingTime + 0.4f) * 0.5f);                            // si a face miscarea mai naturala
-	DrawBird(glm::vec2(-90 + birdOffset, -5), 2.2f, sin(wingTime + 0.6f) * 0.5f);                           // se adauga offset-uri diferite pentru fiecare pasare
-    DrawBird(glm::vec2(-50 + birdOffset, 5), 2.3f, sin(wingTime + 0.1f) * 0.5f);                            // practic aripile "oscileaza" intre pozitia initiala si pozitia finala 
-    DrawBird(glm::vec2(-40 + birdOffset, 0), 2.3f, sin(wingTime + 0.3f) * 0.5f);                            // pentru a simula zborul
-    DrawBird(glm::vec2(-30 + birdOffset, -5), 2.2f, sin(wingTime + 0.5f) * 0.5f);
+    for (const auto& bird : flock) {
 
-	// al doilea stol in plan mai indepartat, organizate in forma de V
-    DrawBird(glm::vec2(40 + birdOffset * 0.8f, 20), 1.8f, sin(wingTime * 0.9f) * 0.4f);
-    DrawBird(glm::vec2(30 + birdOffset * 0.8f, 16), 1.6f, sin(wingTime * 0.9f + 0.2f) * 0.4f);
-    DrawBird(glm::vec2(20 + birdOffset * 0.8f, 12), 1.6f, sin(wingTime * 0.9f + 0.4f) * 0.4f);
-    DrawBird(glm::vec2(50 + birdOffset * 0.8f, 16), 1.6f, sin(wingTime * 0.9f + 0.1f) * 0.4f);
-    DrawBird(glm::vec2(60 + birdOffset * 0.8f, 12), 1.6f, sin(wingTime * 0.9f + 0.3f) * 0.4f);
+        glm::vec2 finalPosition = glm::vec2(bird.currentX, bird.currentY);
 
-    // pasari random izolate
-    DrawBird(glm::vec2(100 + birdOffset * 1.2f, 25), 2.0f, sin(wingTime * 1.1f) * 0.6f);
-    DrawBird(glm::vec2(-140 + birdOffset * 0.7f, 15), 1.9f, sin(wingTime * 0.8f) * 0.5f);
-    DrawBird(glm::vec2(150 + birdOffset * 1.1f, 18), 1.95f, sin(wingTime * 1.05f) * 0.55f);
+        // animatia aripii
+        float wingMovement = sin(wingTime * bird.wingSpeedFactor + bird.wingTimeOffset) * bird.wingAmplitude;
 
+        DrawBird(finalPosition, bird.scale, wingMovement);
+    }
+    
 	// pasarile care se spawneaza la apasarea tastei space
     for (auto& bird : spawnedBirds)
         if (bird.isOnScreen)
@@ -371,6 +393,61 @@ void UpdateAnimation(int value)
     glutTimerFunc(16, UpdateAnimation, 0);
 }
 
+void MouseMotion(int mouseX, int mouseY)
+{
+    float screenWidth = (float)glutGet(GLUT_WINDOW_WIDTH);
+    float screenHeight = (float)glutGet(GLUT_WINDOW_HEIGHT);
+
+    float vao_width = vao_xMax_current - vao_xMin_current;
+    float vao_height = vao_yMax_current - vao_yMin_current;
+
+	// pozitia mouse ului mapata in coordonate Vao curent
+    float baseTargetX = vao_xMin_current + vao_width * ((float)mouseX / screenWidth);
+    float baseTargetY = vao_yMin_current + vao_height * ((screenHeight - (float)mouseY) / screenHeight);
+
+    for (auto& bird : flock) { 
+
+        // pozitia in functie de acel offset pentru a nu se suprapune pasarile
+        float individualTargetX = baseTargetX + bird.permanentOffset.x;
+        float individualTargetY = baseTargetY + bird.permanentOffset.y;
+
+		// se aplica interpolarea liniara pentru a face miscarea mai fluida
+        bird.currentX = (1.0f - bird.lerpFactor) * bird.currentX + bird.lerpFactor * individualTargetX;
+        bird.currentY = (1.0f - bird.lerpFactor) * bird.currentY + bird.lerpFactor * individualTargetY;
+        
+        bird.currentX += sin(wingTime + bird.wingTimeOffset) * 0.5f;
+    }
+
+    glutPostRedisplay();
+}
+
+void MouseButton(int button, int state, int x, int y) {
+    if (button == GLUT_LEFT_BUTTON) {
+		// cand se apasa butonul stang al mouse ului
+        if (state == GLUT_DOWN) {
+            isMouseTracking = true;
+            MouseMotion(x, y);
+        }
+        else if (state == GLUT_UP) {
+            isMouseTracking = false;
+        }
+    }
+}
+
+void IdleFunction() {
+    if (!isMouseTracking) {
+        for (auto& bird : flock) {
+            bird.currentX += autoFlySpeed;
+
+			// apare stolul in stanga iar cand iese in dreapta
+             if (bird.currentX > vao_xMax_current + 50.0f) {
+                 bird.currentX = vao_xMin_current - 50.0f;
+             }
+        }
+    }
+
+    glutPostRedisplay();
+}
 void AddNewBird() 
 {
     SpawnedBird newBird;
@@ -402,10 +479,14 @@ void Cleanup() {
 void ReshapeFunction(int width, int height)
 {
     glViewport(0, 0, width, height);
+
+    if (height == 0) height = 1;
+
+    // raportul de aspect al ferestrei curente
     float aspect = (float)width / (float)height;
 
-    // inaltimea ramane la fel dar se modifica latimea in functie de raportul de mai sus
     float viewHeight = yMax - yMin;
+    // viewWidth este ajustata in functie de aspect
     float viewWidth = viewHeight * aspect;
 
     float centerX = (xMax + xMin) / 2.0f;
@@ -414,12 +495,21 @@ void ReshapeFunction(int width, int height)
     float halfWidth = viewWidth / 2.0f;
     float halfHeight = viewHeight / 2.0f;
 
-	// pentru ca formele sa ramana la aceeasi marime indiferent de dimensiunea ferestrei
-    resizeMatrix = glm::ortho(centerX - halfWidth, centerX + halfWidth,
-        centerY - halfHeight, centerY + halfHeight);
+    resizeMatrix = glm::ortho(
+        centerX - halfWidth,   // Left
+        centerX + halfWidth,   // Right
+        centerY - halfHeight,  // Bottom
+        centerY + halfHeight   // Top
+    );
+
+    // folosite in MouseMotion pentru maparea pixel-unitate
+    vao_xMin_current = centerX - halfWidth;
+    vao_xMax_current = centerX + halfWidth;
+    vao_yMin_current = centerY - halfHeight;
+    vao_yMax_current = centerY + halfHeight;
 }
 
-int main(int argc, char* argv[]) 
+int main(int argc, char* argv[])
 {
     glutInit(&argc, argv);
     glutInitDisplayMode(GLUT_SINGLE | GLUT_RGB);
@@ -432,6 +522,11 @@ int main(int argc, char* argv[])
     srand(static_cast<unsigned int>(time(nullptr)));
 
     Initialize();
+	InitializeFlock();
+
+    glutMouseFunc(MouseButton);
+    glutMotionFunc(MouseMotion); 
+    glutIdleFunc(IdleFunction);
 
     glutDisplayFunc(RenderFunction);
     glutReshapeFunc(ReshapeFunction);
