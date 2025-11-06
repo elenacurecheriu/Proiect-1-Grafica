@@ -8,6 +8,11 @@
 #include <vector>
 #include <cmath>
 #include <windows.h>
+#include <cstdlib>
+#include <ctime>
+#include <algorithm>
+
+using namespace std;
 
 GLuint vaoBg, vboBg, colorBg;
 GLuint vaoBird, vboBird, colorBird;
@@ -42,6 +47,18 @@ float birdSpeed = 0.5f; // viteza de deplasare a pasarii
 float wingTime = 0.0f; // timpul pentru animatia aripilor
 bool isMouseTracking = false;
 const float autoFlySpeed = 0.05f;
+
+struct SpawnedBird 
+{
+    float xOffset;
+    float yPosition;
+    float scale;
+    float speed;
+    float wingPhase;
+    bool isOnScreen;
+};
+
+vector <SpawnedBird> spawnedBirds; //pasarile pe care le adaugam la apasarea tastei space
 
 // se adauga numSegments de triunghiuri care se invart in jurul unui punct ca sa formeze un cerc
 // daca fac numSegments mai mic de exemplu 10 voi avea un poligon cu 10 laturi in loc de un cerc
@@ -91,8 +108,8 @@ void CreateBirdVAO() {
 
 
 void CreateVAO() {
-    std::vector<GLfloat> vertices;
-    std::vector<GLfloat> colors;
+    vector<GLfloat> vertices;
+    vector<GLfloat> colors;
 
     // ====== Solul ======
     GLfloat groundVertices[] = {
@@ -342,16 +359,37 @@ void RenderFunction() {
         DrawBird(finalPosition, bird.scale, wingMovement);
     }
     
+	// pasarile care se spawneaza la apasarea tastei space
+    for (auto& bird : spawnedBirds)
+        if (bird.isOnScreen)
+            DrawBird(glm::vec2(bird.xOffset, bird.yPosition), bird.scale, sin(wingTime + bird.wingPhase) * 0.5f);
+
     glFlush();
 }
 
 // functia de animatie a zborului
-void UpdateAnimation(int value) {
+void UpdateAnimation(int value) 
+{
     birdOffset += birdSpeed; // pozitia pasarilor se actualizeaza
-    if (birdOffset > 400.0f) // reluam animatia atunci cand pasarile ies din ecran
+    if (birdOffset > 500.0f) // reluam animatia atunci cand pasarile ies din ecran
         birdOffset = -300.0f;
     wingTime += 0.1f;        // actualizam timpul pentru urmatorul frame
-    glutPostRedisplay();     // refacem scena
+    
+	// actualizam pozitia pasarilor spawnate
+    for (auto& bird : spawnedBirds)
+    {
+        if (bird.isOnScreen)
+        {
+            bird.xOffset += bird.speed;
+            if (bird.xOffset > 300.0f) 
+                bird.isOnScreen = false;
+        }
+    }
+    
+	// eliberam memoria de pasari care au iesit din ecran
+    spawnedBirds.erase(std::remove_if(spawnedBirds.begin(), spawnedBirds.end(), [](const SpawnedBird& b) { return !b.isOnScreen; }), spawnedBirds.end());
+    
+    glutPostRedisplay(); // refacem scena
     glutTimerFunc(16, UpdateAnimation, 0);
 }
 
@@ -410,6 +448,23 @@ void IdleFunction() {
 
     glutPostRedisplay();
 }
+void AddNewBird() 
+{
+    SpawnedBird newBird;
+    newBird.xOffset = -200.0f;
+    newBird.yPosition = 10.0f + static_cast<float>(rand() % 60); // coordonata y random in zona de cer, evitand astfel zona copacilor
+    newBird.scale = 1.5f + static_cast<float>(rand() % 100) / 100.0f; // dimensiune random
+	newBird.speed = 0.4f + static_cast<float>(rand() % 60) / 100.0f; // viteza random
+    newBird.wingPhase = static_cast<float>(rand() % 100) / 100.0f * 6.28f;
+    newBird.isOnScreen = true;
+    spawnedBirds.push_back(newBird);
+}
+
+
+void KeyboardFunc(unsigned char key, int x, int y) {
+    if (key == ' ' || key == 32)  // tasta space
+        AddNewBird();
+}
 
 void Cleanup() {
     glDeleteProgram(ProgramId);
@@ -462,6 +517,9 @@ int main(int argc, char* argv[])
     glutCreateWindow("Proiect 1");
 
     glewInit();
+    
+	// initializam generatorul de numere random
+    srand(static_cast<unsigned int>(time(nullptr)));
 
     Initialize();
 	InitializeFlock();
@@ -472,7 +530,7 @@ int main(int argc, char* argv[])
 
     glutDisplayFunc(RenderFunction);
     glutReshapeFunc(ReshapeFunction);
-
+    glutKeyboardFunc(KeyboardFunc); // handler pentru keyboard input
     glutCloseFunc(Cleanup);
 
     glutTimerFunc(0, UpdateAnimation, 0);
