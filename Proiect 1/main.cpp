@@ -41,21 +41,33 @@ struct BirdData {
     float wingSpeedFactor;
 };
 
-std::vector<BirdData> flock;
+std::vector<BirdData> stol;
 float birdOffset = 0.0f; // pozitia pasarii pe axa x
-float birdSpeed = 0.5f; // viteza de deplasare a pasarii
+float birdSpeed = 0.2f; // viteza de deplasare a pasarii
 float wingTime = 0.0f; // timpul pentru animatia aripilor
 bool isMouseTracking = false;
 const float autoFlySpeed = 0.05f;
+
+// pentru efectul de interschimbare
+float swapTimer = 0.0f;
+const float swapInterval = 3.0f;
+const float swapDuration = 1.0f; // durata animației de swap
+bool isSwapping = false;
 
 struct SpawnedBird 
 {
     float xOffset;
     float yPosition;
+    float targetX; // pozitia finala dupa interschimbare
+    float targetY;
+    float startX;  // poziția de start pentru swap
+    float startY;  // poziția de start pentru swap
+    float swapTimer; // timer individual pentru fiecare pasăre
     float scale;
     float speed;
     float wingPhase;
     bool isOnScreen;
+    bool isSwapping;
 };
 
 vector <SpawnedBird> spawnedBirds; //pasarile pe care le adaugam la apasarea tastei space
@@ -216,31 +228,25 @@ void Initialize() {
     myMatrix = resizeMatrix;
 }
 
-void InitializeFlock() {
+void InitializeStol() {
     float startX = 0.0f;
     float startY = 0.0f;
 
-    // Structura: currentX, currentY, lerpFactor, permanentOffset, scale, wingTimeOffset, wingAmplitude, wingSpeedFactor
+    stol.push_back({ startX, startY, 0.3f, glm::vec2(0.0f, 0.0f), 2.5f, 0.0f, 0.5f, 1.0f });
 
-    // 1.1. Pasarea 1 (Liderul vizual, offset 0)
-    flock.push_back({ startX, startY, 0.3f, glm::vec2(0.0f, 0.0f), 2.5f, 0.0f, 0.5f, 1.0f });
+    stol.push_back({ startX - 15.0f, startY + 12.0f, 0.25f, glm::vec2(-15.0f, 12.0f), 2.3f, 0.2f, 0.5f, 1.0f });
+    stol.push_back({ startX + 18.0f, startY - 8.0f, 0.27f, glm::vec2(18.0f, -8.0f), 2.3f, 0.1f, 0.5f, 1.0f });
+    stol.push_back({ startX - 10.0f, startY - 14.0f, 0.2f, glm::vec2(-10.0f, -14.0f), 2.2f, 0.4f, 0.5f, 1.0f });
+    stol.push_back({ startX + 22.0f, startY + 5.0f, 0.22f, glm::vec2(22.0f, 5.0f), 2.2f, 0.3f, 0.5f, 1.0f });
 
-    // 1.2. Pasari in fata si lateral (offset mare pentru separare)
-    flock.push_back({ startX - 15.0f, startY + 12.0f, 0.25f, glm::vec2(-15.0f, 12.0f), 2.3f, 0.2f, 0.5f, 1.0f });
-    flock.push_back({ startX + 18.0f, startY - 8.0f, 0.27f, glm::vec2(18.0f, -8.0f), 2.3f, 0.1f, 0.5f, 1.0f });
-    flock.push_back({ startX - 10.0f, startY - 14.0f, 0.2f, glm::vec2(-10.0f, -14.0f), 2.2f, 0.4f, 0.5f, 1.0f });
-    flock.push_back({ startX + 22.0f, startY + 5.0f, 0.22f, glm::vec2(22.0f, 5.0f), 2.2f, 0.3f, 0.5f, 1.0f });
+    stol.push_back({ startX - 5.0f, startY - 20.0f, 0.15f, glm::vec2(-5.0f, -20.0f), 2.1f, 0.6f, 0.5f, 1.0f });
+    stol.push_back({ startX + 14.0f, startY - 18.0f, 0.17f, glm::vec2(14.0f, -18.0f), 2.1f, 0.5f, 0.5f, 1.0f });
+    stol.push_back({ startX - 25.0f, startY - 10.0f, 0.18f, glm::vec2(-25.0f, -10.0f), 2.1f, 0.7f, 0.5f, 1.0f });
+    stol.push_back({ startX - 28.0f, startY + 18.0f, 0.19f, glm::vec2(-28.0f, 18.0f), 2.1f, 0.8f, 0.5f, 1.0f });
 
-    // 1.3. Pasari in coada (raspuns mai lent)
-    flock.push_back({ startX - 5.0f, startY - 20.0f, 0.15f, glm::vec2(-5.0f, -20.0f), 2.1f, 0.6f, 0.5f, 1.0f });
-    flock.push_back({ startX + 14.0f, startY - 18.0f, 0.17f, glm::vec2(14.0f, -18.0f), 2.1f, 0.5f, 0.5f, 1.0f });
-    flock.push_back({ startX - 25.0f, startY - 10.0f, 0.18f, glm::vec2(-25.0f, -10.0f), 2.1f, 0.7f, 0.5f, 1.0f });
-    flock.push_back({ startX - 28.0f, startY + 18.0f, 0.19f, glm::vec2(-28.0f, 18.0f), 2.1f, 0.8f, 0.5f, 1.0f });
-
-    // pasari mici si lente
-    flock.push_back({ startX - 35.0f, startY + 25.0f, 0.09f, glm::vec2(-35.0f, 25.0f), 1.8f, 0.0f, 0.4f, 0.9f });
-    flock.push_back({ startX + 10.0f, startY - 30.0f, 0.05f, glm::vec2(10.0f, -30.0f), 2.0f, 0.9f, 0.6f, 1.05f });
-    flock.push_back({ startX - 20.0f, startY - 28.0f, 0.06f, glm::vec2(-20.0f, -28.0f), 1.9f, 1.0f, 0.55f, 1.1f });
+    stol.push_back({ startX - 35.0f, startY + 25.0f, 0.09f, glm::vec2(-35.0f, 25.0f), 1.8f, 0.0f, 0.4f, 0.9f });
+    stol.push_back({ startX + 10.0f, startY - 30.0f, 0.05f, glm::vec2(10.0f, -30.0f), 2.0f, 0.9f, 0.6f, 1.05f });
+    stol.push_back({ startX - 20.0f, startY - 28.0f, 0.06f, glm::vec2(-20.0f, -28.0f), 1.9f, 1.0f, 0.55f, 1.1f });
 }
 
 void DrawTree(glm::vec2 position, float scale = 1.0f, float colorFactor = 1.0f) {
@@ -349,7 +355,7 @@ void RenderFunction() {
 
     
     // stolul de pasari
-    for (const auto& bird : flock) {
+    for (const auto& bird : stol) {
 
         glm::vec2 finalPosition = glm::vec2(bird.currentX, bird.currentY);
 
@@ -373,12 +379,91 @@ void UpdateAnimation(int value)
     birdOffset += birdSpeed; // pozitia pasarilor se actualizeaza
     if (birdOffset > 500.0f) // reluam animatia atunci cand pasarile ies din ecran
         birdOffset = -300.0f;
-    wingTime += 0.1f;        // actualizam timpul pentru urmatorul frame
+    wingTime += 0.1f;   // actualizam timpul pentru urmatorul frame
     
-	// actualizam pozitia pasarilor spawnate
+	// efectul de interschimbare a pozitiilor pasarilor
+    swapTimer += 0.016f; // ~16ms per frame (60 FPS)
+    
+    if (swapTimer >= swapInterval && !isSwapping) 
+    {
+		vector<int> visibleIndices; // ca sa nu iau pasari invizibile pe ecran sau foarte aproape de margini
+        for (size_t i = 0; i < spawnedBirds.size(); ++i) 
+                if (spawnedBirds[i].isOnScreen && spawnedBirds[i].xOffset > -100.0f && spawnedBirds[i].xOffset < 200.0f) 
+                    visibleIndices.push_back(i);
+     
+    
+        // daca am cel putin doua pasari pe ecran, ele pot sa faca schimb de pozitii
+        if (visibleIndices.size() >= 2) // aleg oricare doua pasari 
+         {
+
+              int idx1 = visibleIndices[rand() % visibleIndices.size()];
+              int idx2;
+              do 
+              {
+                idx2 = visibleIndices[rand() % visibleIndices.size()];
+              } while (idx1 == idx2);
+            
+              spawnedBirds[idx1].startX = spawnedBirds[idx1].xOffset;
+              spawnedBirds[idx1].startY = spawnedBirds[idx1].yPosition;
+              spawnedBirds[idx2].startX = spawnedBirds[idx2].xOffset;
+              spawnedBirds[idx2].startY = spawnedBirds[idx2].yPosition;
+          
+              spawnedBirds[idx1].targetX = spawnedBirds[idx2].xOffset;
+              spawnedBirds[idx1].targetY = spawnedBirds[idx2].yPosition;
+  
+              spawnedBirds[idx2].targetX = spawnedBirds[idx1].xOffset;
+              spawnedBirds[idx2].targetY = spawnedBirds[idx1].yPosition;
+   
+              spawnedBirds[idx1].swapTimer = 0.0f;
+              spawnedBirds[idx2].swapTimer = 0.0f;
+   
+              spawnedBirds[idx1].isSwapping = true;
+              spawnedBirds[idx2].isSwapping = true;
+     
+              isSwapping = true;
+        }
+        
+    swapTimer = 0.0f;
+    }
+    
+    // daca avem pasari disponibile pentru interschimbare
+    if (isSwapping) 
+    {
+         bool anyStillSwapping = false;
+ 
+		 for (auto& bird : spawnedBirds) // realizez animatia independent pentru fiecare pasare (care este "marcata" pentru swap)
+         {
+               if (bird.isSwapping) 
+               {
+                   bird.swapTimer += 0.016f;
+                
+                   float progress = bird.swapTimer / swapDuration; 
+        
+				   if (progress >= 1.0f) // daca animatia s-a finalizat, setam pozitia finala
+                   {
+                        bird.xOffset = bird.targetX;
+                        bird.yPosition = bird.targetY;
+                        bird.isSwapping = false;
+                   } 
+                   else 
+                   {
+                      // ne aflam mid animatie
+                      float smoothProgress = progress * progress * (3.0f - 2.0f * progress); // smoothstep
+                      bird.xOffset = bird.startX + (bird.targetX - bird.startX) * smoothProgress;
+                      bird.yPosition = bird.startY + (bird.targetY - bird.startY) * smoothProgress;
+                      anyStillSwapping = true;
+                    }
+                }
+         }
+
+        if (!anyStillSwapping) 
+            isSwapping = false;   
+    }
+
+    // actualizam pozitia pasarilor spawnate (doar pentru cele care NU sunt in swap)
     for (auto& bird : spawnedBirds)
     {
-        if (bird.isOnScreen)
+        if (bird.isOnScreen && !bird.isSwapping)
         {
             bird.xOffset += bird.speed;
             if (bird.xOffset > 300.0f) 
@@ -405,7 +490,7 @@ void MouseMotion(int mouseX, int mouseY)
     float baseTargetX = vao_xMin_current + vao_width * ((float)mouseX / screenWidth);
     float baseTargetY = vao_yMin_current + vao_height * ((screenHeight - (float)mouseY) / screenHeight);
 
-    for (auto& bird : flock) { 
+    for (auto& bird : stol) { 
 
         // pozitia in functie de acel offset pentru a nu se suprapune pasarile
         float individualTargetX = baseTargetX + bird.permanentOffset.x;
@@ -436,7 +521,7 @@ void MouseButton(int button, int state, int x, int y) {
 
 void IdleFunction() {
     if (!isMouseTracking) {
-        for (auto& bird : flock) {
+        for (auto& bird : stol) {
             bird.currentX += autoFlySpeed;
 
 			// apare stolul in stanga iar cand iese in dreapta
@@ -453,10 +538,16 @@ void AddNewBird()
     SpawnedBird newBird;
     newBird.xOffset = -200.0f;
     newBird.yPosition = 10.0f + static_cast<float>(rand() % 60); // coordonata y random in zona de cer, evitand astfel zona copacilor
+    newBird.targetX = newBird.xOffset; // inițial, targetX = xOffset
+    newBird.targetY = newBird.yPosition; // inițial, targetY = yPosition
+    newBird.startX = newBird.xOffset;
+    newBird.startY = newBird.yPosition;
+    newBird.swapTimer = 0.0f;
     newBird.scale = 1.5f + static_cast<float>(rand() % 100) / 100.0f; // dimensiune random
 	newBird.speed = 0.4f + static_cast<float>(rand() % 60) / 100.0f; // viteza random
     newBird.wingPhase = static_cast<float>(rand() % 100) / 100.0f * 6.28f;
     newBird.isOnScreen = true;
+    newBird.isSwapping = false;
     spawnedBirds.push_back(newBird);
 }
 
@@ -522,7 +613,7 @@ int main(int argc, char* argv[])
     srand(static_cast<unsigned int>(time(nullptr)));
 
     Initialize();
-	InitializeFlock();
+	InitializeStol();
 
     glutMouseFunc(MouseButton);
     glutMotionFunc(MouseMotion); 
